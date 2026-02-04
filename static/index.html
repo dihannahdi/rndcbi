@@ -705,9 +705,15 @@
                             <button class="modal-close" @click="showModal = null">&times;</button>
                         </div>
                         <div class="modal-body">
-                            <div class="form-group">
-                                <label class="form-label">Project Title *</label>
-                                <input type="text" class="form-input" x-model="newProject.title" placeholder="e.g., Biostimulant Efficacy Trial">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Project Code *</label>
+                                    <input type="text" class="form-input" x-model="newProject.code" placeholder="e.g., PRJ-2026-001">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Project Title *</label>
+                                    <input type="text" class="form-input" x-model="newProject.title" placeholder="e.g., Biostimulant Efficacy Trial">
+                                </div>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
@@ -732,10 +738,10 @@
                                     <label class="form-label">Experiment Design</label>
                                     <select class="form-select" x-model="newProject.experiment_design">
                                         <option value="">Select design...</option>
-                                        <option value="rak">RAK (Randomized Complete Block)</option>
-                                        <option value="ral">RAL (Complete Randomized)</option>
-                                        <option value="factorial">Factorial</option>
-                                        <option value="split_plot">Split Plot</option>
+                                        <option value="Rak">RAK (Randomized Complete Block)</option>
+                                        <option value="Ral">RAL (Complete Randomized)</option>
+                                        <option value="Factorial">Factorial</option>
+                                        <option value="SplitPlot">Split Plot</option>
                                     </select>
                                 </div>
                                 <div class="form-group">
@@ -760,7 +766,7 @@
                         </div>
                         <div class="modal-footer">
                             <button class="btn btn-secondary" @click="showModal = null">Cancel</button>
-                            <button class="btn btn-primary" @click="createProject()" :disabled="isLoading || !newProject.title">
+                            <button class="btn btn-primary" @click="createProject()" :disabled="isLoading || !newProject.title || !newProject.code">
                                 <i class="fas fa-spinner fa-spin" x-show="isLoading"></i>
                                 Create Project
                             </button>
@@ -779,27 +785,22 @@
                         </div>
                         <div class="modal-body">
                             <div class="form-group">
-                                <label class="form-label">Formula Name *</label>
-                                <input type="text" class="form-input" x-model="newFormula.name" placeholder="e.g., Bio-NPK Plus">
+                                <label class="form-label">Select Project *</label>
+                                <select class="form-select" x-model="newFormula.project_id">
+                                    <option value="">Select a project...</option>
+                                    <template x-for="project in projects" :key="project.id">
+                                        <option :value="project.id" x-text="project.code + ' - ' + project.title"></option>
+                                    </template>
+                                </select>
                             </div>
                             <div class="form-row">
                                 <div class="form-group">
-                                    <label class="form-label">Formula Type</label>
-                                    <select class="form-select" x-model="newFormula.formula_type">
-                                        <option value="">Select type...</option>
-                                        <option value="liquid">Liquid</option>
-                                        <option value="powder">Powder</option>
-                                        <option value="granule">Granule</option>
-                                    </select>
+                                    <label class="form-label">Formula Code *</label>
+                                    <input type="text" class="form-input" x-model="newFormula.code" placeholder="e.g., FML-001">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Project (optional)</label>
-                                    <select class="form-select" x-model="newFormula.project_id">
-                                        <option value="">No project</option>
-                                        <template x-for="project in projects" :key="project.id">
-                                            <option :value="project.id" x-text="project.code"></option>
-                                        </template>
-                                    </select>
+                                    <label class="form-label">Formula Name *</label>
+                                    <input type="text" class="form-input" x-model="newFormula.name" placeholder="e.g., Bio-NPK Plus">
                                 </div>
                             </div>
                             <div class="form-group">
@@ -823,7 +824,7 @@
                         </div>
                         <div class="modal-footer">
                             <button class="btn btn-secondary" @click="showModal = null">Cancel</button>
-                            <button class="btn btn-primary" @click="createFormula()" :disabled="isLoading || !newFormula.name">
+                            <button class="btn btn-primary" @click="createFormula()" :disabled="isLoading || !newFormula.name || !newFormula.code || !newFormula.project_id">
                                 <i class="fas fa-spinner fa-spin" x-show="isLoading"></i>
                                 Create Formula
                             </button>
@@ -1067,7 +1068,12 @@
 
                 async createFormula() {
                     this.isLoading = true;
-                    try { await this.apiCall('/formulas', 'POST', this.newFormula); this.showModal = null; this.newFormula = {}; await this.loadFormulas(); }
+                    try {
+                        // Add empty ingredients array if not present
+                        const formulaData = { ...this.newFormula, ingredients: this.newFormula.ingredients || [] };
+                        await this.apiCall('/formulas', 'POST', formulaData);
+                        this.showModal = null; this.newFormula = {}; await this.loadFormulas();
+                    }
                     catch (e) { alert('Error: ' + e.message); }
                     this.isLoading = false;
                 },
