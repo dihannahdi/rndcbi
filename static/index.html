@@ -381,6 +381,7 @@
                                                     <th>Code</th>
                                                     <th>Title</th>
                                                     <th>Crop</th>
+                                                    <th>Formulas</th>
                                                     <th>Status</th>
                                                     <th>Created</th>
                                                     <th>Actions</th>
@@ -389,14 +390,17 @@
                                             <tbody>
                                                 <template x-for="project in projects" :key="project.id">
                                                     <tr>
-                                                        <td x-text="project.code"></td>
+                                                        <td><span style="font-family: monospace; color: var(--primary-light);" x-text="project.code"></span></td>
                                                         <td x-text="project.title"></td>
                                                         <td x-text="project.crop_type || '-'"></td>
+                                                        <td><span class="badge badge-info" x-text="(getProjectFormulas(project.id).length || 0) + ' formulas'"></span></td>
                                                         <td><span class="badge" :class="getStatusBadgeClass(project.status)" x-text="formatStatus(project.status)"></span></td>
                                                         <td x-text="formatDate(project.created_at)"></td>
-                                                        <td>
-                                                            <button class="btn btn-secondary btn-sm" @click="viewProject(project)"><i class="fas fa-eye"></i></button>
-                                                            <button class="btn btn-secondary btn-sm" @click="generateProjectQR(project.id)"><i class="fas fa-qrcode"></i></button>
+                                                        <td style="white-space: nowrap;">
+                                                            <button class="btn btn-primary btn-sm" @click="openProjectDetail(project)" title="View Details & Formulas"><i class="fas fa-folder-open"></i></button>
+                                                            <button class="btn btn-secondary btn-sm" @click="editProject(project)" title="Edit"><i class="fas fa-edit"></i></button>
+                                                            <button class="btn btn-secondary btn-sm" @click="generateProjectQR(project.id)" title="Generate QR"><i class="fas fa-qrcode"></i></button>
+                                                            <button class="btn btn-danger btn-sm" @click="deleteProject(project)" title="Delete"><i class="fas fa-trash"></i></button>
                                                         </td>
                                                     </tr>
                                                 </template>
@@ -936,6 +940,162 @@
                 </div>
             </template>
 
+            <!-- Project Detail Modal -->
+            <template x-if="showModal === 'projectDetail' && selectedProject">
+                <div class="modal-overlay" @click.self="showModal = null">
+                    <div class="modal" style="max-width: 800px;">
+                        <div class="modal-header">
+                            <h3 class="modal-title"><i class="fas fa-flask" style="color: var(--primary);"></i> Project Details</h3>
+                            <button class="modal-close" @click="showModal = null">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <!-- Project Info -->
+                            <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+                                <div style="display: flex; justify-content: space-between; align-items: start;">
+                                    <div>
+                                        <h4 style="margin-bottom: 8px;" x-text="selectedProject.title"></h4>
+                                        <div style="display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted);">
+                                            <span><i class="fas fa-tag"></i> <span x-text="selectedProject.code"></span></span>
+                                            <span><i class="fas fa-seedling"></i> <span x-text="selectedProject.crop_type || 'N/A'"></span></span>
+                                            <span><i class="fas fa-leaf"></i> <span x-text="selectedProject.crop_variety || 'N/A'"></span></span>
+                                            <span><i class="fas fa-calendar"></i> <span x-text="formatDate(selectedProject.created_at)"></span></span>
+                                        </div>
+                                    </div>
+                                    <span class="badge" :class="getStatusBadgeClass(selectedProject.status)" x-text="formatStatus(selectedProject.status)"></span>
+                                </div>
+                                <template x-if="selectedProject.objectives">
+                                    <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+                                        <strong style="font-size: 12px; color: var(--text-muted);">OBJECTIVES</strong>
+                                        <p style="margin-top: 4px; font-size: 14px;" x-text="selectedProject.objectives"></p>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <!-- Project Formulas Section -->
+                            <div style="margin-top: 20px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                                    <h4 style="font-size: 14px;"><i class="fas fa-prescription-bottle" style="color: var(--primary);"></i> Formulas for this Project</h4>
+                                    <button class="btn btn-primary btn-sm" @click="addFormulaToProject()">
+                                        <i class="fas fa-plus"></i> Add Formula
+                                    </button>
+                                </div>
+                                <template x-if="projectFormulas.length === 0">
+                                    <div style="text-align: center; padding: 30px; background: var(--bg-tertiary); border-radius: 8px; color: var(--text-muted);">
+                                        <i class="fas fa-flask" style="font-size: 32px; opacity: 0.5; margin-bottom: 10px;"></i>
+                                        <p>No formulas assigned to this project yet.</p>
+                                        <button class="btn btn-secondary btn-sm" style="margin-top: 10px;" @click="addFormulaToProject()">
+                                            <i class="fas fa-plus"></i> Create First Formula
+                                        </button>
+                                    </div>
+                                </template>
+                                <template x-if="projectFormulas.length > 0">
+                                    <div class="table-container">
+                                        <table>
+                                            <thead>
+                                                <tr><th>Code</th><th>Name</th><th>Type</th><th>Status</th><th>Version</th><th>Actions</th></tr>
+                                            </thead>
+                                            <tbody>
+                                                <template x-for="formula in projectFormulas" :key="formula.id">
+                                                    <tr>
+                                                        <td><span style="font-family: monospace;" x-text="formula.code"></span></td>
+                                                        <td x-text="formula.name"></td>
+                                                        <td x-text="formula.formula_type || '-'"></td>
+                                                        <td><span class="badge" :class="getStatusBadgeClass(formula.status)" x-text="formatStatus(formula.status)"></span></td>
+                                                        <td x-text="'v' + (formula.version || 1)"></td>
+                                                        <td>
+                                                            <button class="btn btn-secondary btn-sm" @click="viewFormula(formula)"><i class="fas fa-eye"></i></button>
+                                                        </td>
+                                                    </tr>
+                                                </template>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" @click="editProject(selectedProject)"><i class="fas fa-edit"></i> Edit Project</button>
+                            <button class="btn btn-primary" @click="showModal = null">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Edit Project Modal -->
+            <template x-if="showModal === 'editProject' && editingProject">
+                <div class="modal-overlay" @click.self="showModal = null">
+                    <div class="modal">
+                        <div class="modal-header">
+                            <h3 class="modal-title"><i class="fas fa-edit" style="color: var(--primary);"></i> Edit Project</h3>
+                            <button class="modal-close" @click="showModal = null">&times;</button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Project Code</label>
+                                    <input type="text" class="form-input" x-model="editingProject.code" disabled style="opacity: 0.6;">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" x-model="editingProject.status">
+                                        <option value="draft">Draft</option>
+                                        <option value="active">Active</option>
+                                        <option value="on_hold">On Hold</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="archived">Archived</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Project Title *</label>
+                                <input type="text" class="form-input" x-model="editingProject.title">
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Crop Type</label>
+                                    <input type="text" class="form-input" x-model="editingProject.crop_type">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Crop Variety</label>
+                                    <input type="text" class="form-input" x-model="editingProject.crop_variety">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Objectives</label>
+                                <textarea class="form-textarea" x-model="editingProject.objectives"></textarea>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label class="form-label">Experiment Design</label>
+                                    <select class="form-select" x-model="editingProject.experiment_design">
+                                        <option value="">Select design...</option>
+                                        <option value="Rak">RAK (Randomized Complete Block)</option>
+                                        <option value="Ral">RAL (Complete Randomized)</option>
+                                        <option value="Factorial">Factorial</option>
+                                        <option value="SplitPlot">Split Plot</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Replications</label>
+                                    <input type="number" class="form-input" x-model="editingProject.replications">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Location</label>
+                                <input type="text" class="form-input" x-model="editingProject.location_name">
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" @click="showModal = null">Cancel</button>
+                            <button class="btn btn-primary" @click="updateProject()" :disabled="isLoading || !editingProject.title">
+                                <i class="fas fa-spinner fa-spin" x-show="isLoading"></i>
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
             <!-- AI Chat -->
             <div class="chat-container">
                 <template x-if="!chatOpen">
@@ -988,6 +1148,7 @@
                 recentProjects: [], recentActivity: [], projects: [], formulas: [], labTests: [], monitoringSessions: [],
                 newProject: {}, newFormula: {}, newLabTest: {},
                 newMonitoringSession: { session_date: new Date().toISOString().split('T')[0] },
+                editingProject: null, selectedProject: null, projectFormulas: [],
                 analysisType: 'descriptive', selectedProjectId: '', aiQuery: '', analysisResult: null,
                 reportType: 'project_summary', reportProjectId: '', reportTitle: '', reportResult: null,
                 qrInput: '', qrResult: '',
@@ -1054,8 +1215,33 @@
                     } catch (e) { console.error(e); }
                 },
 
-                async loadProjects() { this.isLoading = true; try { const res = await this.apiCall('/projects'); this.projects = res.data || []; } catch (e) { console.error(e); } this.isLoading = false; },
-                async loadFormulas() { this.isLoading = true; this.formulas = []; this.isLoading = false; },
+                async loadProjects() { 
+                    this.isLoading = true; 
+                    try { 
+                        const res = await this.apiCall('/projects'); 
+                        this.projects = res.data || []; 
+                        // Load formulas for all projects
+                        await this.loadAllFormulas();
+                    } catch (e) { console.error(e); } 
+                    this.isLoading = false; 
+                },
+                async loadAllFormulas() {
+                    try {
+                        // In production, this would be a single API call
+                        // For now, we simulate with stored formulas
+                        this.formulas = this.formulas || [];
+                    } catch (e) { console.error(e); }
+                },
+                async loadFormulas() { this.isLoading = true; this.formulas = this.formulas || []; this.isLoading = false; },
+                async loadProjectFormulas(projectId) {
+                    try {
+                        // Filter formulas by project_id
+                        return this.formulas.filter(f => f.project_id === projectId);
+                    } catch (e) { console.error(e); return []; }
+                },
+                getProjectFormulas(projectId) {
+                    return this.formulas.filter(f => f.project_id === projectId);
+                },
                 async loadLabTests() { this.isLoading = true; this.labTests = []; this.isLoading = false; },
                 async loadMonitoringSessions() { this.isLoading = true; this.monitoringSessions = []; this.isLoading = false; },
 
@@ -1092,10 +1278,44 @@
                     this.isLoading = false;
                 },
 
-                viewProject(project) { alert('Project: ' + project.title + '\n\nCode: ' + project.code + '\nStatus: ' + project.status + '\nCrop: ' + (project.crop_type || 'N/A')); },
-                viewFormula(formula) { alert('Formula: ' + formula.name); },
+                // Project Detail & Edit Functions
+                async openProjectDetail(project) {
+                    this.selectedProject = project;
+                    this.projectFormulas = this.getProjectFormulas(project.id);
+                    this.showModal = 'projectDetail';
+                },
+                editProject(project) {
+                    this.editingProject = { ...project };
+                    this.showModal = 'editProject';
+                },
+                async updateProject() {
+                    this.isLoading = true;
+                    try {
+                        await this.apiCall(`/projects/${this.editingProject.id}`, 'PUT', this.editingProject);
+                        this.showModal = null;
+                        this.editingProject = null;
+                        await this.loadProjects();
+                    } catch (e) { alert('Error: ' + e.message); }
+                    this.isLoading = false;
+                },
+                async deleteProject(project) {
+                    if (!confirm(`Are you sure you want to delete project "${project.title}"?\n\nThis action cannot be undone.`)) return;
+                    this.isLoading = true;
+                    try {
+                        await this.apiCall(`/projects/${project.id}`, 'DELETE');
+                        await this.loadProjects();
+                    } catch (e) { alert('Error: ' + e.message); }
+                    this.isLoading = false;
+                },
+                viewProject(project) { this.openProjectDetail(project); },
+                viewFormula(formula) { alert('Formula: ' + formula.name + '\n\nCode: ' + formula.code + '\nStatus: ' + (formula.status || 'Draft')); },
                 viewLabTest(test) { alert('Lab Test: ' + test.test_type); },
                 viewMonitoringSession(session) { alert('Monitoring Session: ' + session.id); },
+                async addFormulaToProject() {
+                    if (!this.selectedProject) return;
+                    this.newFormula = { project_id: this.selectedProject.id };
+                    this.showModal = 'createFormula';
+                },
 
                 async generateProjectQR(projectId) { try { await this.apiCall(`/projects/${projectId}/qr-codes`, 'POST', {}); alert('QR codes generated!'); } catch (e) { alert('Error: ' + e.message); } },
 
