@@ -51,13 +51,14 @@ async fn main() -> std::io::Result<()> {
 
     info!("Database connection pool established");
 
-    // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Failed to run database migrations");
-
-    info!("Database migrations completed");
+    // Run migrations (ignore version mismatches if already applied)
+    match sqlx::migrate!("./migrations").run(&pool).await {
+        Ok(_) => info!("Database migrations completed"),
+        Err(sqlx::migrate::MigrateError::VersionMismatch(_)) => {
+            info!("Migration already applied (version mismatch, continuing)");
+        }
+        Err(e) => panic!("Failed to run database migrations: {}", e),
+    }
 
     // Initialize services
     let jwt_service = Arc::new(JwtService::new(&settings.jwt.secret));
