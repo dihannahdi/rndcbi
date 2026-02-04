@@ -456,7 +456,7 @@ impl ProjectService {
             VALUES ($1, $2, $3, $4::team_member_role)
             ON CONFLICT (project_id, user_id) DO UPDATE SET role = $4::team_member_role
             RETURNING id, project_id, user_id, role, responsibilities, 
-                      created_at as assigned_at, assigned_by, is_active
+                      assigned_at, assigned_by, is_active
             "#
         )
         .bind(member_id)
