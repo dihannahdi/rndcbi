@@ -171,7 +171,7 @@ pub async fn validator(
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (ActixError, ServiceRequest)> {
     let jwt_service = req
-        .app_data::<Arc<JwtService>>()
+        .app_data::<web::Data<Arc<JwtService>>>()
         .expect("JwtService not configured");
 
     match jwt_service.validate_token(credentials.token()) {
