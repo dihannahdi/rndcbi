@@ -189,6 +189,19 @@ async fn main() -> std::io::Result<()> {
                             .route("/analysis/cost-benefit", web::post().to(analysis_handler::cost_benefit))
                             // Report routes
                             .route("/reports/generate", web::post().to(report_handler::generate_report))
+                            // AI Chat routes (RAG Research Assistant)
+                            .service(
+                                web::scope("/ai")
+                                    .route("/chat", web::post().to(ai_chat_handler::chat))
+                                    .route("/context-types", web::get().to(ai_chat_handler::get_context_types))
+                            )
+                            // History export routes
+                            .service(
+                                web::scope("/history")
+                                    .route("/export", web::post().to(history_handler::export_logs))
+                                    .route("/recent", web::get().to(history_handler::get_recent_activity))
+                                    .route("/project/{id}", web::get().to(history_handler::export_project_history))
+                            )
                     )
             )
             // Static files (must be last to catch all other routes)
@@ -424,5 +437,192 @@ mod report_handler {
             .await?;
 
         Ok(HttpResponse::Ok().json(ApiResponse::success(report)))
+    }
+}
+
+// ==============================================================================
+// AI CHAT HANDLERS MODULE (RAG Research Assistant)
+// ==============================================================================
+
+mod ai_chat_handler {
+    use super::*;
+    use crate::analysis::{ChatRequest, RAGChatService};
+    use crate::auth::AuthenticatedUser;
+    use crate::errors::AppError;
+    use crate::models::ApiResponse;
+    use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
+    use sqlx::PgPool;
+
+    /// AI Research Assistant chat endpoint
+    pub async fn chat(
+        pool: web::Data<PgPool>,
+        settings: web::Data<Settings>,
+        body: web::Json<ChatRequest>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let _user = req
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))?;
+
+        let chat_service = RAGChatService::new(&settings)
+            .ok_or_else(|| AppError::AIError("OpenAI API not configured".to_string()))?;
+
+        let response = chat_service.chat(pool.get_ref(), &body).await?;
+
+        Ok(HttpResponse::Ok().json(ApiResponse::success(response)))
+    }
+
+    /// Get available context types for AI chat
+    pub async fn get_context_types(
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let _user = req
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))?;
+
+        let context_types = vec![
+            serde_json::json!({
+                "type": "projects",
+                "description": "Research project data including hypothesis, methodology, status"
+            }),
+            serde_json::json!({
+                "type": "formulas",
+                "description": "Formula/product formulations and their specifications"
+            }),
+            serde_json::json!({
+                "type": "experiments",
+                "description": "Experimental data and monitoring results"
+            }),
+            serde_json::json!({
+                "type": "results",
+                "description": "Lab test results and analysis outputs"
+            }),
+            serde_json::json!({
+                "type": "history",
+                "description": "Audit trail and activity history"
+            }),
+        ];
+
+        Ok(HttpResponse::Ok().json(ApiResponse::success(context_types)))
+    }
+}
+
+// ==============================================================================
+// HISTORY EXPORT HANDLERS MODULE
+// ==============================================================================
+
+mod history_handler {
+    use super::*;
+    use crate::analysis::{ExportRequest, HistoryExportService, RAGChatService};
+    use crate::auth::{AuthenticatedUser, Authorization};
+    use crate::errors::AppError;
+    use crate::models::{ApiResponse, UserRole};
+    use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
+    use sqlx::PgPool;
+
+    /// Export history logs with filters
+    pub async fn export_logs(
+        pool: web::Data<PgPool>,
+        body: web::Json<ExportRequest>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let user = req
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))?;
+
+        // Require elevated permissions for full history export
+        Authorization::require_roles(&user, &[
+            UserRole::RdManager,
+            UserRole::SystemAdmin,
+            UserRole::PrincipalResearcher,
+        ])?;
+
+        let result = HistoryExportService::export(pool.get_ref(), &body).await?;
+
+        // If CSV format, return as downloadable file
+        if body.format == "csv" {
+            if let Some(csv_data) = result.data.get("csv").and_then(|v| v.as_str()) {
+                return Ok(HttpResponse::Ok()
+                    .content_type("text/csv")
+                    .append_header(("Content-Disposition", "attachment; filename=\"history_export.csv\""))
+                    .body(csv_data.to_string()));
+            }
+        }
+
+        Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+    }
+
+    /// Export project-specific history
+    pub async fn export_project_history(
+        pool: web::Data<PgPool>,
+        path: web::Path<uuid::Uuid>,
+        query: web::Query<FormatQuery>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let _user = req
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))?;
+
+        let project_id = path.into_inner();
+        let format = query.format.as_deref().unwrap_or("json");
+
+        let result = HistoryExportService::export_project_history(
+            pool.get_ref(),
+            project_id,
+            format,
+        ).await?;
+
+        // If CSV format, return as downloadable file
+        if format == "csv" {
+            if let Some(csv_data) = result.data.get("csv").and_then(|v| v.as_str()) {
+                return Ok(HttpResponse::Ok()
+                    .content_type("text/csv")
+                    .append_header(("Content-Disposition", format!("attachment; filename=\"project_{}_history.csv\"", project_id)))
+                    .body(csv_data.to_string()));
+            }
+        }
+
+        Ok(HttpResponse::Ok().json(ApiResponse::success(result)))
+    }
+
+    /// Get recent activity summary
+    pub async fn get_recent_activity(
+        pool: web::Data<PgPool>,
+        query: web::Query<LimitQuery>,
+        req: HttpRequest,
+    ) -> Result<HttpResponse, AppError> {
+        let _user = req
+            .extensions()
+            .get::<AuthenticatedUser>()
+            .cloned()
+            .ok_or_else(|| AppError::Authentication("Not authenticated".to_string()))?;
+
+        let limit = query.limit.unwrap_or(50);
+
+        let logs = RAGChatService::export_history_logs(
+            pool.get_ref(),
+            None, None, None, None,
+            Some(limit),
+        ).await?;
+
+        Ok(HttpResponse::Ok().json(ApiResponse::success(logs)))
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    pub struct FormatQuery {
+        pub format: Option<String>,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    pub struct LimitQuery {
+        pub limit: Option<i64>,
     }
 }

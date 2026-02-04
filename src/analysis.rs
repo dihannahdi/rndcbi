@@ -1055,3 +1055,710 @@ impl DecimalExt for Decimal {
         s.parse().ok()
     }
 }
+
+// ==============================================================================
+// RAG AI CHAT SERVICE - Research Assistant with Database Context
+// ==============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatRequest {
+    pub query: String,
+    pub project_id: Option<Uuid>,
+    pub context_types: Option<Vec<String>>, // "projects", "formulas", "experiments", "results", "history"
+    pub max_context_items: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatResponse {
+    pub answer: String,
+    pub sources: Vec<ContextSource>,
+    pub suggested_queries: Vec<String>,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextSource {
+    pub source_type: String,
+    pub source_id: String,
+    pub title: String,
+    pub snippet: String,
+    pub relevance_score: f32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryLogEntry {
+    pub id: Uuid,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub action: String,
+    pub entity_type: String,
+    pub entity_id: Option<Uuid>,
+    pub user_name: String,
+    pub details: Option<String>,
+}
+
+pub struct RAGChatService {
+    client: Client<OpenAIConfig>,
+    model: String,
+}
+
+impl RAGChatService {
+    pub fn new(settings: &Settings) -> Option<Self> {
+        if settings.openai.api_key.is_empty() {
+            return None;
+        }
+
+        let config = OpenAIConfig::new().with_api_key(&settings.openai.api_key);
+        let client = Client::with_config(config);
+
+        Some(Self {
+            client,
+            model: settings.openai.model.clone(),
+        })
+    }
+
+    /// Main RAG chat endpoint - answers questions using database context
+    pub async fn chat(
+        &self,
+        pool: &PgPool,
+        request: &ChatRequest,
+    ) -> Result<ChatResponse, AppError> {
+        // 1. Gather relevant context from database based on query
+        let context = self.gather_context(pool, request).await?;
+        
+        // 2. Build prompt with context
+        let system_prompt = self.build_system_prompt();
+        let user_prompt = self.build_user_prompt(&request.query, &context);
+        
+        // 3. Call OpenAI
+        let response = self.call_openai_chat(&system_prompt, &user_prompt).await?;
+        
+        // 4. Extract sources for attribution
+        let sources = context.iter().take(5).map(|c| c.clone()).collect();
+        
+        // 5. Generate suggested follow-up queries
+        let suggested_queries = self.generate_suggestions(&request.query, &context);
+        
+        Ok(ChatResponse {
+            answer: response,
+            sources,
+            suggested_queries,
+            confidence: self.estimate_confidence(&context),
+        })
+    }
+
+    async fn gather_context(
+        &self,
+        pool: &PgPool,
+        request: &ChatRequest,
+    ) -> Result<Vec<ContextSource>, AppError> {
+        let mut context_sources = Vec::new();
+        let max_items = request.max_context_items.unwrap_or(10);
+        let query_lower = request.query.to_lowercase();
+        
+        let context_types = request.context_types.clone().unwrap_or_else(|| {
+            vec!["projects".to_string(), "formulas".to_string(), "experiments".to_string()]
+        });
+
+        // Search projects
+        if context_types.contains(&"projects".to_string()) {
+            let projects = self.search_projects(pool, &query_lower, request.project_id).await?;
+            context_sources.extend(projects);
+        }
+
+        // Search formulas
+        if context_types.contains(&"formulas".to_string()) {
+            let formulas = self.search_formulas(pool, &query_lower).await?;
+            context_sources.extend(formulas);
+        }
+
+        // Search experiment data
+        if context_types.contains(&"experiments".to_string()) || context_types.contains(&"results".to_string()) {
+            let experiments = self.search_experiments(pool, &query_lower, request.project_id).await?;
+            context_sources.extend(experiments);
+        }
+
+        // Search audit history
+        if context_types.contains(&"history".to_string()) {
+            let history = self.search_history(pool, &query_lower).await?;
+            context_sources.extend(history);
+        }
+
+        // Sort by relevance and limit
+        context_sources.sort_by(|a, b| b.relevance_score.partial_cmp(&a.relevance_score).unwrap_or(std::cmp::Ordering::Equal));
+        context_sources.truncate(max_items);
+
+        Ok(context_sources)
+    }
+
+    async fn search_projects(
+        &self,
+        pool: &PgPool,
+        query: &str,
+        specific_project: Option<Uuid>,
+    ) -> Result<Vec<ContextSource>, AppError> {
+        let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>, Option<String>)> = if let Some(pid) = specific_project {
+            sqlx::query_as(
+                r#"SELECT id, code, title, status::text, hypothesis, methodology, crop_type
+                   FROM projects WHERE id = $1"#
+            )
+            .bind(pid)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+        } else {
+            sqlx::query_as(
+                r#"SELECT id, code, title, status::text, hypothesis, methodology, crop_type
+                   FROM projects 
+                   WHERE LOWER(title) LIKE $1 
+                      OR LOWER(code) LIKE $1 
+                      OR LOWER(hypothesis) LIKE $1
+                      OR LOWER(crop_type) LIKE $1
+                   ORDER BY created_at DESC
+                   LIMIT 5"#
+            )
+            .bind(format!("%{}%", query))
+            .fetch_all(pool)
+            .await
+            .map_err(|e| AppError::Database(e.to_string()))?
+        };
+
+        Ok(rows.iter().map(|row| {
+            let snippet = format!(
+                "Project: {} - {} [{}]\nHypothesis: {}\nMethodology: {}\nCrop: {}",
+                row.1, row.2, row.3,
+                row.4.as_deref().unwrap_or("N/A"),
+                row.5.as_deref().unwrap_or("N/A"),
+                row.6.as_deref().unwrap_or("N/A")
+            );
+            let relevance = self.calculate_relevance(query, &snippet);
+            ContextSource {
+                source_type: "project".to_string(),
+                source_id: row.0.to_string(),
+                title: format!("{} - {}", row.1, row.2),
+                snippet,
+                relevance_score: relevance,
+            }
+        }).collect())
+    }
+
+    async fn search_formulas(
+        &self,
+        pool: &PgPool,
+        query: &str,
+    ) -> Result<Vec<ContextSource>, AppError> {
+        let rows: Vec<(Uuid, String, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+            r#"SELECT id, code, name, status::text, description, application_rate
+               FROM formulas 
+               WHERE LOWER(name) LIKE $1 
+                  OR LOWER(code) LIKE $1 
+                  OR LOWER(description) LIKE $1
+               ORDER BY created_at DESC
+               LIMIT 5"#
+        )
+        .bind(format!("%{}%", query))
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(rows.iter().map(|row| {
+            let snippet = format!(
+                "Formula: {} - {} [{}]\nDescription: {}\nApplication Rate: {}",
+                row.1, row.2, row.3,
+                row.4.as_deref().unwrap_or("N/A"),
+                row.5.as_deref().unwrap_or("N/A")
+            );
+            let relevance = self.calculate_relevance(query, &snippet);
+            ContextSource {
+                source_type: "formula".to_string(),
+                source_id: row.0.to_string(),
+                title: format!("{} - {}", row.1, row.2),
+                snippet,
+                relevance_score: relevance,
+            }
+        }).collect())
+    }
+
+    async fn search_experiments(
+        &self,
+        pool: &PgPool,
+        query: &str,
+        project_id: Option<Uuid>,
+    ) -> Result<Vec<ContextSource>, AppError> {
+        // Search monitoring data with aggregates
+        let base_query = if project_id.is_some() {
+            r#"SELECT 
+                p.id as project_id,
+                p.code as project_code,
+                mp.name as parameter_name,
+                COUNT(md.id) as data_count,
+                AVG(md.numeric_value)::float8 as avg_value,
+                STDDEV(md.numeric_value)::float8 as std_dev
+               FROM monitoring_data md
+               JOIN experimental_units eu ON md.unit_id = eu.id
+               JOIN experimental_blocks eb ON eu.block_id = eb.id
+               JOIN projects p ON eb.project_id = p.id
+               JOIN monitoring_parameters mp ON md.parameter_id = mp.id
+               WHERE p.id = $1
+               GROUP BY p.id, p.code, mp.name
+               LIMIT 10"#
+        } else {
+            r#"SELECT 
+                p.id as project_id,
+                p.code as project_code,
+                mp.name as parameter_name,
+                COUNT(md.id) as data_count,
+                AVG(md.numeric_value)::float8 as avg_value,
+                STDDEV(md.numeric_value)::float8 as std_dev
+               FROM monitoring_data md
+               JOIN experimental_units eu ON md.unit_id = eu.id
+               JOIN experimental_blocks eb ON eu.block_id = eb.id
+               JOIN projects p ON eb.project_id = p.id
+               JOIN monitoring_parameters mp ON md.parameter_id = mp.id
+               WHERE LOWER(mp.name) LIKE $1 OR LOWER(p.code) LIKE $1
+               GROUP BY p.id, p.code, mp.name
+               LIMIT 10"#
+        };
+
+        let rows: Vec<(Uuid, String, Option<String>, Option<i64>, Option<f64>, Option<f64>)> = if let Some(pid) = project_id {
+            sqlx::query_as(base_query)
+                .bind(pid)
+                .fetch_all(pool)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?
+        } else {
+            sqlx::query_as(base_query)
+                .bind(format!("%{}%", query))
+                .fetch_all(pool)
+                .await
+                .map_err(|e| AppError::Database(e.to_string()))?
+        };
+
+        Ok(rows.iter().map(|row| {
+            let snippet = format!(
+                "Project {} - Parameter: {}\nData Points: {}, Mean: {:.2} ± {:.2}",
+                row.1,
+                row.2.as_deref().unwrap_or("Unknown"),
+                row.3.unwrap_or(0),
+                row.4.unwrap_or(0.0),
+                row.5.unwrap_or(0.0)
+            );
+            let relevance = self.calculate_relevance(query, &snippet);
+            ContextSource {
+                source_type: "experiment_data".to_string(),
+                source_id: row.0.to_string(),
+                title: format!("{} - {}", row.1, row.2.as_deref().unwrap_or("Data")),
+                snippet,
+                relevance_score: relevance,
+            }
+        }).collect())
+    }
+
+    async fn search_history(
+        &self,
+        pool: &PgPool,
+        query: &str,
+    ) -> Result<Vec<ContextSource>, AppError> {
+        let rows: Vec<(Uuid, chrono::DateTime<chrono::Utc>, String, String, Option<Uuid>, Option<serde_json::Value>)> = sqlx::query_as(
+            r#"SELECT al.id, al.created_at, al.action, al.entity_type, al.entity_id, al.changes
+               FROM audit_logs al
+               WHERE LOWER(al.action) LIKE $1 
+                  OR LOWER(al.entity_type) LIKE $1
+               ORDER BY al.created_at DESC
+               LIMIT 10"#
+        )
+        .bind(format!("%{}%", query))
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        Ok(rows.iter().map(|row| {
+            let changes_str = row.5.as_ref()
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "N/A".to_string());
+            let snippet = format!(
+                "Action: {} on {} at {}\nChanges: {}",
+                row.2, row.3, row.1.format("%Y-%m-%d %H:%M"),
+                if changes_str.len() > 200 { &changes_str[..200] } else { &changes_str }
+            );
+            let relevance = self.calculate_relevance(query, &snippet);
+            ContextSource {
+                source_type: "audit_log".to_string(),
+                source_id: row.0.to_string(),
+                title: format!("{} - {}", row.2, row.3),
+                snippet,
+                relevance_score: relevance,
+            }
+        }).collect())
+    }
+
+    fn calculate_relevance(&self, query: &str, text: &str) -> f32 {
+        let query_words: Vec<&str> = query.split_whitespace().collect();
+        let text_lower = text.to_lowercase();
+        
+        let mut matches = 0;
+        for word in &query_words {
+            if text_lower.contains(*word) {
+                matches += 1;
+            }
+        }
+        
+        if query_words.is_empty() {
+            return 0.5;
+        }
+        
+        matches as f32 / query_words.len() as f32
+    }
+
+    fn build_system_prompt(&self) -> String {
+        r#"You are the CentraBio R&D NEXUS AI Research Assistant - an expert in agricultural biotechnology, biostimulants, and fertilizer research. You help researchers at Centra Biotech Indonesia analyze experiments, formulations, and research data.
+
+Your capabilities:
+1. Answer questions about ongoing research projects and experiments
+2. Explain statistical results and their implications
+3. Compare formula performances across experiments
+4. Provide recommendations based on data analysis
+5. Help with research methodology questions
+6. Summarize historical research activities
+
+Always base your answers on the provided context from the database. If the context doesn't contain enough information, say so clearly. Cite specific projects, formulas, or data points when relevant.
+
+Response format:
+- Be concise but thorough
+- Use scientific terminology appropriate for R&D professionals
+- Include specific numbers and statistics when available
+- Suggest follow-up analyses when appropriate
+- Highlight any data quality concerns"#.to_string()
+    }
+
+    fn build_user_prompt(&self, query: &str, context: &[ContextSource]) -> String {
+        let context_text = context.iter()
+            .map(|c| format!("[{}] {}\n{}", c.source_type.to_uppercase(), c.title, c.snippet))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        format!(
+            r#"## DATABASE CONTEXT:
+{}
+
+## USER QUESTION:
+{}
+
+Please answer based on the context provided. If the context is insufficient, indicate what additional information would be helpful."#,
+            context_text,
+            query
+        )
+    }
+
+    async fn call_openai_chat(&self, system: &str, user: &str) -> Result<String, AppError> {
+        let request = CreateChatCompletionRequestArgs::default()
+            .model(&self.model)
+            .messages([
+                ChatCompletionRequestMessage::System(
+                    ChatCompletionRequestSystemMessageArgs::default()
+                        .content(system)
+                        .build()
+                        .map_err(|e| AppError::AIError(e.to_string()))?
+                ),
+                ChatCompletionRequestMessage::User(
+                    ChatCompletionRequestUserMessageArgs::default()
+                        .content(user)
+                        .build()
+                        .map_err(|e| AppError::AIError(e.to_string()))?
+                ),
+            ])
+            .temperature(0.4)
+            .max_tokens(1500_u32)
+            .build()
+            .map_err(|e| AppError::AIError(e.to_string()))?;
+
+        let response = self
+            .client
+            .chat()
+            .create(request)
+            .await
+            .map_err(|e| AppError::AIError(e.to_string()))?;
+
+        response
+            .choices
+            .first()
+            .and_then(|c| c.message.content.clone())
+            .ok_or_else(|| AppError::AIError("No response from AI".to_string()))
+    }
+
+    fn generate_suggestions(&self, query: &str, context: &[ContextSource]) -> Vec<String> {
+        let mut suggestions = Vec::new();
+        
+        // Based on context types found
+        let has_projects = context.iter().any(|c| c.source_type == "project");
+        let has_formulas = context.iter().any(|c| c.source_type == "formula");
+        let has_data = context.iter().any(|c| c.source_type == "experiment_data");
+
+        if has_projects {
+            suggestions.push("What are the key findings from this project?".to_string());
+            suggestions.push("Compare results with control group".to_string());
+        }
+        if has_formulas {
+            suggestions.push("What is the cost-benefit analysis of this formula?".to_string());
+            suggestions.push("Show application recommendations".to_string());
+        }
+        if has_data {
+            suggestions.push("Perform statistical analysis on this data".to_string());
+            suggestions.push("Show trends over time".to_string());
+        }
+        
+        // Generic suggestions
+        if suggestions.is_empty() {
+            suggestions.push("Show all active projects".to_string());
+            suggestions.push("List recent experiment results".to_string());
+            suggestions.push("What formulas are pending QC?".to_string());
+        }
+
+        suggestions.truncate(4);
+        suggestions
+    }
+
+    fn estimate_confidence(&self, context: &[ContextSource]) -> String {
+        if context.is_empty() {
+            return "low".to_string();
+        }
+        
+        let avg_relevance: f32 = context.iter().map(|c| c.relevance_score).sum::<f32>() / context.len() as f32;
+        
+        if avg_relevance > 0.7 && context.len() >= 3 {
+            "high".to_string()
+        } else if avg_relevance > 0.4 || context.len() >= 2 {
+            "medium".to_string()
+        } else {
+            "low".to_string()
+        }
+    }
+
+    /// Export history logs with various filters
+    pub async fn export_history_logs(
+        pool: &PgPool,
+        start_date: Option<chrono::DateTime<chrono::Utc>>,
+        end_date: Option<chrono::DateTime<chrono::Utc>>,
+        entity_type: Option<&str>,
+        action_filter: Option<&str>,
+        limit: Option<i64>,
+    ) -> Result<Vec<HistoryLogEntry>, AppError> {
+        let mut query_parts = vec!["SELECT al.id, al.created_at, al.action, al.entity_type, al.entity_id, u.full_name, al.changes::text FROM audit_logs al LEFT JOIN users u ON al.performed_by = u.id WHERE 1=1"];
+        let mut conditions = Vec::new();
+
+        if start_date.is_some() {
+            conditions.push("al.created_at >= $1");
+        }
+        if end_date.is_some() {
+            conditions.push("al.created_at <= $2");
+        }
+        if entity_type.is_some() {
+            conditions.push("al.entity_type = $3");
+        }
+        if action_filter.is_some() {
+            conditions.push("LOWER(al.action) LIKE $4");
+        }
+
+        // Build query dynamically
+        let limit_val = limit.unwrap_or(1000);
+        
+        // Use a simpler approach - fetch all and filter in Rust for flexibility
+        let rows: Vec<(Uuid, chrono::DateTime<chrono::Utc>, String, String, Option<Uuid>, Option<String>, Option<String>)> = sqlx::query_as(
+            r#"SELECT al.id, al.created_at, al.action, al.entity_type, al.entity_id, 
+                      COALESCE(u.full_name, 'System') as user_name, al.changes::text
+               FROM audit_logs al 
+               LEFT JOIN users u ON al.performed_by = u.id
+               ORDER BY al.created_at DESC
+               LIMIT $1"#
+        )
+        .bind(limit_val)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let mut entries: Vec<HistoryLogEntry> = rows.iter()
+            .filter(|row| {
+                let mut include = true;
+                if let Some(start) = start_date {
+                    include = include && row.1 >= start;
+                }
+                if let Some(end) = end_date {
+                    include = include && row.1 <= end;
+                }
+                if let Some(et) = entity_type {
+                    include = include && row.3 == et;
+                }
+                if let Some(af) = action_filter {
+                    include = include && row.2.to_lowercase().contains(&af.to_lowercase());
+                }
+                include
+            })
+            .map(|row| HistoryLogEntry {
+                id: row.0,
+                timestamp: row.1,
+                action: row.2.clone(),
+                entity_type: row.3.clone(),
+                entity_id: row.4,
+                user_name: row.5.clone().unwrap_or_else(|| "System".to_string()),
+                details: row.6.clone(),
+            })
+            .collect();
+
+        Ok(entries)
+    }
+}
+
+// ==============================================================================
+// HISTORY EXPORT SERVICE
+// ==============================================================================
+
+pub struct HistoryExportService;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportRequest {
+    pub start_date: Option<String>, // ISO 8601 format
+    pub end_date: Option<String>,
+    pub entity_types: Option<Vec<String>>,
+    pub actions: Option<Vec<String>>,
+    pub format: String, // "json", "csv"
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportResult {
+    pub format: String,
+    pub total_records: usize,
+    pub data: serde_json::Value,
+    pub generated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl HistoryExportService {
+    pub async fn export(
+        pool: &PgPool,
+        request: &ExportRequest,
+    ) -> Result<ExportResult, AppError> {
+        let start_date = request.start_date.as_ref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+        
+        let end_date = request.end_date.as_ref()
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&chrono::Utc));
+
+        let entity_type = request.entity_types.as_ref()
+            .and_then(|v| v.first())
+            .map(|s| s.as_str());
+        
+        let action_filter = request.actions.as_ref()
+            .and_then(|v| v.first())
+            .map(|s| s.as_str());
+
+        let logs = RAGChatService::export_history_logs(
+            pool,
+            start_date,
+            end_date,
+            entity_type,
+            action_filter,
+            request.limit,
+        ).await?;
+
+        let total_records = logs.len();
+
+        let data = match request.format.as_str() {
+            "csv" => {
+                // Build CSV string
+                let mut csv = String::from("id,timestamp,action,entity_type,entity_id,user_name,details\n");
+                for log in &logs {
+                    csv.push_str(&format!(
+                        "{},{},{},{},{},{},{}\n",
+                        log.id,
+                        log.timestamp.to_rfc3339(),
+                        log.action.replace(",", ";"),
+                        log.entity_type.replace(",", ";"),
+                        log.entity_id.map(|id| id.to_string()).unwrap_or_default(),
+                        log.user_name.replace(",", ";"),
+                        log.details.as_ref().map(|d| d.replace(",", ";").replace("\n", " ")).unwrap_or_default()
+                    ));
+                }
+                serde_json::json!({ "csv": csv })
+            }
+            _ => {
+                // JSON format (default)
+                serde_json::to_value(&logs).unwrap_or(serde_json::json!([]))
+            }
+        };
+
+        Ok(ExportResult {
+            format: request.format.clone(),
+            total_records,
+            data,
+            generated_at: chrono::Utc::now(),
+        })
+    }
+
+    /// Export project-specific history
+    pub async fn export_project_history(
+        pool: &PgPool,
+        project_id: Uuid,
+        format: &str,
+    ) -> Result<ExportResult, AppError> {
+        let rows: Vec<(Uuid, chrono::DateTime<chrono::Utc>, String, String, Option<String>, Option<String>)> = sqlx::query_as(
+            r#"SELECT al.id, al.created_at, al.action, al.entity_type, 
+                      COALESCE(u.full_name, 'System') as user_name, al.changes::text
+               FROM audit_logs al 
+               LEFT JOIN users u ON al.performed_by = u.id
+               WHERE al.entity_id = $1 
+                  OR (al.entity_type = 'project' AND al.changes::text LIKE $2)
+               ORDER BY al.created_at DESC
+               LIMIT 500"#
+        )
+        .bind(project_id)
+        .bind(format!("%{}%", project_id))
+        .fetch_all(pool)
+        .await
+        .map_err(|e| AppError::Database(e.to_string()))?;
+
+        let logs: Vec<HistoryLogEntry> = rows.iter().map(|row| HistoryLogEntry {
+            id: row.0,
+            timestamp: row.1,
+            action: row.2.clone(),
+            entity_type: row.3.clone(),
+            entity_id: Some(project_id),
+            user_name: row.4.clone().unwrap_or_else(|| "System".to_string()),
+            details: row.5.clone(),
+        }).collect();
+
+        let total_records = logs.len();
+
+        let data = match format {
+            "csv" => {
+                let mut csv = String::from("id,timestamp,action,entity_type,user_name,details\n");
+                for log in &logs {
+                    csv.push_str(&format!(
+                        "{},{},{},{},{},{}\n",
+                        log.id,
+                        log.timestamp.to_rfc3339(),
+                        log.action.replace(",", ";"),
+                        log.entity_type.replace(",", ";"),
+                        log.user_name.replace(",", ";"),
+                        log.details.as_ref().map(|d| d.replace(",", ";").replace("\n", " ")).unwrap_or_default()
+                    ));
+                }
+                serde_json::json!({ "csv": csv })
+            }
+            _ => serde_json::to_value(&logs).unwrap_or(serde_json::json!([]))
+        };
+
+        Ok(ExportResult {
+            format: format.to_string(),
+            total_records,
+            data,
+            generated_at: chrono::Utc::now(),
+        })
+    }
+}
