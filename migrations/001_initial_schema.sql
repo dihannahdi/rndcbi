@@ -49,15 +49,6 @@ CREATE TYPE lab_test_status AS ENUM (
     'invalid'
 );
 
--- Team Member Role Type
-CREATE TYPE team_member_role AS ENUM (
-    'principal_researcher',
-    'co_researcher',
-    'field_officer',
-    'lab_analyst',
-    'observer'
-);
-
 -- Experimental Design Type
 CREATE TYPE experiment_design AS ENUM (
     'rak',              -- Rancangan Acak Kelompok (Randomized Complete Block Design)
