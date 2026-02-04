@@ -250,6 +250,7 @@ impl ProjectService {
         pool: &PgPool,
         req: CreateProjectRequest,
         created_by: Uuid,
+        organization_id: Uuid,
     ) -> Result<Project, AppError> {
         req.validate().map_err(|e| AppError::Validation(e.to_string()))?;
 
@@ -301,7 +302,7 @@ impl ProjectService {
         .bind(&req.plot_size)
         .bind(status_str)
         .bind(created_by)
-        .bind::<Option<Uuid>>(None) // organization_id - will be set later
+        .bind(organization_id)
         .fetch_one(pool)
         .await
         .map_err(|e| AppError::Database(e.to_string()))?;

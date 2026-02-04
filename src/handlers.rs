@@ -284,7 +284,8 @@ pub async fn create_project(
 
     Authorization::can_create_project(&user)?;
 
-    let project = ProjectService::create(pool.get_ref(), body.into_inner(), user.user_id()?).await?;
+    let org_id = user.org_id.ok_or_else(|| AppError::Validation("User has no organization".to_string()))?;
+    let project = ProjectService::create(pool.get_ref(), body.into_inner(), user.user_id()?, org_id).await?;
 
     // Audit log
     AuditService::log(
