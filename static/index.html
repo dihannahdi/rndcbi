@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Excel Export Library -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
         :root {
             --primary: #1a5f2a; --primary-light: #2d8c3f; --primary-dark: #0d4a1a;
@@ -155,6 +157,52 @@
         .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         
+        /* Skeleton Loading */
+        .skeleton { background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-card) 50%, var(--bg-tertiary) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 4px; }
+        .skeleton-text { height: 14px; margin-bottom: 8px; }
+        .skeleton-title { height: 20px; width: 60%; margin-bottom: 12px; }
+        .skeleton-card { height: 100px; border-radius: var(--radius); }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        
+        /* Toast Notifications */
+        .toast-container { position: fixed; top: 20px; right: 20px; z-index: 3000; display: flex; flex-direction: column; gap: 10px; max-width: 400px; }
+        .toast { padding: 14px 20px; border-radius: var(--radius); display: flex; align-items: flex-start; gap: 12px; animation: slideInRight 0.3s ease, fadeOut 0.3s ease 4.7s forwards; box-shadow: var(--shadow); }
+        .toast-success { background: rgba(76, 175, 80, 0.95); color: white; border-left: 4px solid #2e7d32; }
+        .toast-error { background: rgba(244, 67, 54, 0.95); color: white; border-left: 4px solid #c62828; }
+        .toast-warning { background: rgba(255, 152, 0, 0.95); color: white; border-left: 4px solid #ef6c00; }
+        .toast-info { background: rgba(33, 150, 243, 0.95); color: white; border-left: 4px solid #1565c0; }
+        .toast-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+        .toast-content { flex: 1; }
+        .toast-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+        .toast-message { font-size: 13px; opacity: 0.9; }
+        .toast-close { background: none; border: none; color: white; opacity: 0.7; cursor: pointer; font-size: 16px; padding: 0; margin-left: 8px; }
+        .toast-close:hover { opacity: 1; }
+        @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateX(100%); } }
+        
+        /* Table Pagination */
+        .pagination { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-top: 1px solid var(--border); margin-top: 16px; }
+        .pagination-info { font-size: 13px; color: var(--text-muted); }
+        .pagination-controls { display: flex; align-items: center; gap: 8px; }
+        .pagination-btn { padding: 8px 12px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-size: 13px; transition: all 0.2s; }
+        .pagination-btn:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .pagination-btn.active { background: var(--primary); border-color: var(--primary); }
+        .page-size-select { padding: 8px 12px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); border-radius: 6px; font-size: 13px; }
+        
+        /* Table Sorting */
+        .sortable { cursor: pointer; user-select: none; }
+        .sortable:hover { color: var(--primary-light); }
+        .sort-icon { margin-left: 6px; font-size: 10px; opacity: 0.5; }
+        .sort-icon.active { opacity: 1; color: var(--primary-light); }
+        
+        /* Search/Filter Bar */
+        .table-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+        .search-box { position: relative; flex: 1; max-width: 300px; }
+        .search-box input { width: 100%; padding: 10px 16px 10px 40px; }
+        .search-box i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+        .toolbar-actions { display: flex; gap: 8px; }
+        
         /* Animations */
         .fade-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -170,6 +218,9 @@
     </style>
 </head>
 <body x-data="app()" x-init="init()">
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+    
     <!-- Login Page -->
     <template x-if="!isAuthenticated">
         <div class="login-container">
@@ -356,39 +407,66 @@
                             <div class="card">
                                 <div class="card-header">
                                     <h3 class="card-title"><i class="fas fa-flask"></i> All Projects</h3>
-                                    <button class="btn btn-primary" @click="showModal = 'createProject'">
-                                        <i class="fas fa-plus"></i> New Project
-                                    </button>
+                                    <div style="display: flex; gap: 8px;">
+                                        <button class="btn btn-secondary" @click="exportToExcel(projects, 'Projects')">
+                                            <i class="fas fa-file-excel"></i> Export
+                                        </button>
+                                        <button class="btn btn-primary" @click="showModal = 'createProject'">
+                                            <i class="fas fa-plus"></i> New Project
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Search & Filter Toolbar -->
+                                <div class="table-toolbar">
+                                    <div class="search-box">
+                                        <i class="fas fa-search"></i>
+                                        <input type="text" class="form-input" x-model="projectSearch" placeholder="Search projects..." @input="filterProjects()">
+                                    </div>
+                                    <div class="toolbar-actions">
+                                        <select class="form-select" style="width: auto;" x-model="projectStatusFilter" @change="filterProjects()">
+                                            <option value="">All Status</option>
+                                            <option value="draft">Draft</option>
+                                            <option value="active">Active</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="on_hold">On Hold</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 <template x-if="isLoading">
-                                    <div class="loading"><div class="spinner"></div></div>
+                                    <!-- Skeleton Loading -->
+                                    <div>
+                                        <div class="skeleton skeleton-card" style="margin-bottom: 12px;"></div>
+                                        <div class="skeleton skeleton-card" style="margin-bottom: 12px;"></div>
+                                        <div class="skeleton skeleton-card"></div>
+                                    </div>
                                 </template>
-                                <template x-if="!isLoading && projects.length === 0">
+                                <template x-if="!isLoading && filteredProjects.length === 0">
                                     <div class="empty-state">
                                         <i class="fas fa-flask"></i>
-                                        <h3>No projects found</h3>
-                                        <p>Create your first project to start your research</p>
-                                        <button class="btn btn-primary" style="margin-top: 16px;" @click="showModal = 'createProject'">
+                                        <h3 x-text="projectSearch ? 'No matching projects' : 'No projects found'"></h3>
+                                        <p x-text="projectSearch ? 'Try a different search term' : 'Create your first project to start your research'"></p>
+                                        <button class="btn btn-primary" style="margin-top: 16px;" @click="showModal = 'createProject'" x-show="!projectSearch">
                                             <i class="fas fa-plus"></i> Create Project
                                         </button>
                                     </div>
                                 </template>
-                                <template x-if="!isLoading && projects.length > 0">
-                                    <div class="table-container">
-                                        <table>
-                                            <thead>
+                                <template x-if="!isLoading && filteredProjects.length > 0">
+                                    <div>
+                                        <div class="table-container">
+                                            <table>
+                                                <thead>
                                                 <tr>
-                                                    <th>Code</th>
-                                                    <th>Title</th>
+                                                    <th class="sortable" @click="sortTable('projects', 'code')">Code <i class="fas fa-sort sort-icon" :class="{ 'active': projectSort.field === 'code' }"></i></th>
+                                                    <th class="sortable" @click="sortTable('projects', 'title')">Title <i class="fas fa-sort sort-icon" :class="{ 'active': projectSort.field === 'title' }"></i></th>
                                                     <th>Crop</th>
                                                     <th>Formulas</th>
-                                                    <th>Status</th>
-                                                    <th>Created</th>
+                                                    <th class="sortable" @click="sortTable('projects', 'status')">Status <i class="fas fa-sort sort-icon" :class="{ 'active': projectSort.field === 'status' }"></i></th>
+                                                    <th class="sortable" @click="sortTable('projects', 'created_at')">Created <i class="fas fa-sort sort-icon" :class="{ 'active': projectSort.field === 'created_at' }"></i></th>
                                                     <th>Actions</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                <template x-for="project in projects" :key="project.id">
+                                                <template x-for="project in paginatedProjects" :key="project.id">
                                                     <tr>
                                                         <td><span style="font-family: monospace; color: var(--primary-light);" x-text="project.code"></span></td>
                                                         <td x-text="project.title"></td>
@@ -406,6 +484,26 @@
                                                 </template>
                                             </tbody>
                                         </table>
+                                        </div>
+                                        <!-- Pagination -->
+                                        <div class="pagination">
+                                            <div class="pagination-info">
+                                                Showing <span x-text="((projectPage - 1) * projectPageSize) + 1"></span> - <span x-text="Math.min(projectPage * projectPageSize, filteredProjects.length)"></span> of <span x-text="filteredProjects.length"></span> projects
+                                            </div>
+                                            <div class="pagination-controls">
+                                                <select class="page-size-select" x-model="projectPageSize" @change="projectPage = 1">
+                                                    <option value="5">5 per page</option>
+                                                    <option value="10">10 per page</option>
+                                                    <option value="25">25 per page</option>
+                                                    <option value="50">50 per page</option>
+                                                </select>
+                                                <button class="pagination-btn" @click="projectPage--" :disabled="projectPage === 1"><i class="fas fa-chevron-left"></i></button>
+                                                <template x-for="page in projectTotalPages" :key="page">
+                                                    <button class="pagination-btn" :class="{ 'active': projectPage === page }" @click="projectPage = page" x-text="page" x-show="Math.abs(page - projectPage) < 3 || page === 1 || page === projectTotalPages"></button>
+                                                </template>
+                                                <button class="pagination-btn" @click="projectPage++" :disabled="projectPage >= projectTotalPages"><i class="fas fa-chevron-right"></i></button>
+                                            </div>
+                                        </div>
                                     </div>
                                 </template>
                             </div>
@@ -1139,6 +1237,34 @@
     </template>
 
     <script>
+        // ================== TOAST NOTIFICATION SYSTEM ==================
+        const Toast = {
+            container: null,
+            init() {
+                this.container = document.getElementById('toastContainer');
+            },
+            show(type, title, message, duration = 5000) {
+                if (!this.container) this.init();
+                const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', warning: 'fa-exclamation-triangle', info: 'fa-info-circle' };
+                const toast = document.createElement('div');
+                toast.className = `toast toast-${type}`;
+                toast.innerHTML = `
+                    <i class="fas ${icons[type]} toast-icon"></i>
+                    <div class="toast-content">
+                        <div class="toast-title">${title}</div>
+                        <div class="toast-message">${message}</div>
+                    </div>
+                    <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+                `;
+                this.container.appendChild(toast);
+                setTimeout(() => toast.remove(), duration);
+            },
+            success(title, msg) { this.show('success', title, msg); },
+            error(title, msg) { this.show('error', title, msg); },
+            warning(title, msg) { this.show('warning', title, msg); },
+            info(title, msg) { this.show('info', title, msg); }
+        };
+
         function app() {
             return {
                 isAuthenticated: false, isLoading: false, loginError: '',
@@ -1154,6 +1280,11 @@
                 qrInput: '', qrResult: '',
                 chatMessages: [], chatInput: '', isChatLoading: false,
                 apiBase: '/api/v1',
+                
+                // Pagination & Filtering State
+                projectSearch: '', projectStatusFilter: '', filteredProjects: [],
+                projectPage: 1, projectPageSize: 10,
+                projectSort: { field: 'created_at', direction: 'desc' },
 
                 async init() {
                     const token = localStorage.getItem('access_token');
@@ -1163,6 +1294,87 @@
                 get pageTitle() {
                     return { dashboard: 'Dashboard', projects: 'Projects', formulas: 'Formulas', 'lab-tests': 'Lab Tests',
                         monitoring: 'Field Monitoring', 'qr-scanner': 'QR Scanner', analysis: 'AI Analysis', reports: 'Reports' }[this.currentPage] || 'Dashboard';
+                },
+                
+                // Computed: Paginated projects for current page
+                get paginatedProjects() {
+                    const start = (this.projectPage - 1) * this.projectPageSize;
+                    return this.filteredProjects.slice(start, start + parseInt(this.projectPageSize));
+                },
+                
+                // Computed: Total pages for projects
+                get projectTotalPages() {
+                    return Math.ceil(this.filteredProjects.length / this.projectPageSize) || 1;
+                },
+
+                // Filter projects based on search and status
+                filterProjects() {
+                    let result = [...this.projects];
+                    // Apply search filter
+                    if (this.projectSearch) {
+                        const search = this.projectSearch.toLowerCase();
+                        result = result.filter(p => 
+                            (p.title && p.title.toLowerCase().includes(search)) ||
+                            (p.code && p.code.toLowerCase().includes(search)) ||
+                            (p.crop_type && p.crop_type.toLowerCase().includes(search))
+                        );
+                    }
+                    // Apply status filter
+                    if (this.projectStatusFilter) {
+                        result = result.filter(p => p.status === this.projectStatusFilter);
+                    }
+                    // Apply sorting
+                    result.sort((a, b) => {
+                        let aVal = a[this.projectSort.field] || '';
+                        let bVal = b[this.projectSort.field] || '';
+                        if (this.projectSort.field === 'created_at') {
+                            aVal = new Date(aVal).getTime();
+                            bVal = new Date(bVal).getTime();
+                        }
+                        if (this.projectSort.direction === 'asc') return aVal > bVal ? 1 : -1;
+                        return aVal < bVal ? 1 : -1;
+                    });
+                    this.filteredProjects = result;
+                    this.projectPage = 1; // Reset to first page when filtering
+                },
+                
+                // Sort table
+                sortTable(table, field) {
+                    if (table === 'projects') {
+                        if (this.projectSort.field === field) {
+                            this.projectSort.direction = this.projectSort.direction === 'asc' ? 'desc' : 'asc';
+                        } else {
+                            this.projectSort.field = field;
+                            this.projectSort.direction = 'asc';
+                        }
+                        this.filterProjects();
+                    }
+                },
+                
+                // Export to Excel
+                exportToExcel(data, filename) {
+                    if (!data || data.length === 0) {
+                        Toast.warning('No Data', 'No data available to export');
+                        return;
+                    }
+                    try {
+                        // Prepare data for export (flatten objects)
+                        const exportData = data.map(item => ({
+                            Code: item.code || '',
+                            Title: item.title || item.name || '',
+                            Type: item.crop_type || item.formula_type || item.test_type || '',
+                            Status: item.status || '',
+                            Created: item.created_at ? new Date(item.created_at).toLocaleDateString() : '',
+                            Description: item.objectives || item.description || ''
+                        }));
+                        const ws = XLSX.utils.json_to_sheet(exportData);
+                        const wb = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb, ws, filename);
+                        XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                        Toast.success('Export Successful', `${data.length} records exported to Excel`);
+                    } catch (e) {
+                        Toast.error('Export Failed', e.message);
+                    }
                 },
 
                 async navigate(page) {
@@ -1181,12 +1393,21 @@
                         const data = await res.json();
                         if (!res.ok) throw new Error(data.message || 'Login failed');
                         localStorage.setItem('access_token', data.access_token); localStorage.setItem('refresh_token', data.refresh_token);
-                        this.user = data.user; this.isAuthenticated = true; await this.loadDashboardData();
-                    } catch (e) { this.loginError = e.message; }
+                        this.user = data.user; this.isAuthenticated = true; 
+                        Toast.success('Welcome!', `Logged in as ${data.user.full_name || data.user.email}`);
+                        await this.loadDashboardData();
+                    } catch (e) { this.loginError = e.message; Toast.error('Login Failed', e.message); }
                     this.isLoading = false;
                 },
 
-                logout() { localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); this.isAuthenticated = false; this.user = {}; this.credentials = { email: '', password: '' }; },
+                logout() { 
+                    localStorage.removeItem('access_token'); 
+                    localStorage.removeItem('refresh_token'); 
+                    this.isAuthenticated = false; 
+                    this.user = {}; 
+                    this.credentials = { email: '', password: '' }; 
+                    Toast.info('Logged Out', 'You have been logged out successfully');
+                },
 
                 async apiCall(endpoint, method = 'GET', body = null) {
                     const token = localStorage.getItem('access_token');
@@ -1220,19 +1441,26 @@
                     try { 
                         const res = await this.apiCall('/projects'); 
                         this.projects = res.data || []; 
+                        this.filterProjects(); // Apply filtering
                         // Load formulas for all projects
                         await this.loadAllFormulas();
-                    } catch (e) { console.error(e); } 
+                    } catch (e) { console.error(e); Toast.error('Load Failed', 'Could not load projects'); } 
                     this.isLoading = false; 
                 },
                 async loadAllFormulas() {
                     try {
-                        // In production, this would be a single API call
-                        // For now, we simulate with stored formulas
-                        this.formulas = this.formulas || [];
-                    } catch (e) { console.error(e); }
+                        const res = await this.apiCall('/formulas');
+                        this.formulas = res.data || [];
+                    } catch (e) { console.error(e); this.formulas = []; }
                 },
-                async loadFormulas() { this.isLoading = true; this.formulas = this.formulas || []; this.isLoading = false; },
+                async loadFormulas() { 
+                    this.isLoading = true; 
+                    try {
+                        const res = await this.apiCall('/formulas');
+                        this.formulas = res.data || [];
+                    } catch (e) { console.error(e); this.formulas = []; }
+                    this.isLoading = false; 
+                },
                 async loadProjectFormulas(projectId) {
                     try {
                         // Filter formulas by project_id
@@ -1247,8 +1475,14 @@
 
                 async createProject() {
                     this.isLoading = true;
-                    try { await this.apiCall('/projects', 'POST', this.newProject); this.showModal = null; this.newProject = {}; await this.loadProjects(); }
-                    catch (e) { alert('Error: ' + e.message); }
+                    try { 
+                        await this.apiCall('/projects', 'POST', this.newProject); 
+                        this.showModal = null; 
+                        Toast.success('Project Created', `Project "${this.newProject.title}" created successfully`);
+                        this.newProject = {}; 
+                        await this.loadProjects(); 
+                    }
+                    catch (e) { Toast.error('Error', e.message); }
                     this.isLoading = false;
                 },
 
@@ -1258,23 +1492,32 @@
                         // Add empty ingredients array if not present
                         const formulaData = { ...this.newFormula, ingredients: this.newFormula.ingredients || [] };
                         await this.apiCall('/formulas', 'POST', formulaData);
+                        Toast.success('Formula Created', `Formula "${this.newFormula.name}" created successfully`);
                         this.showModal = null; this.newFormula = {}; await this.loadFormulas();
                     }
-                    catch (e) { alert('Error: ' + e.message); }
+                    catch (e) { Toast.error('Error', e.message); }
                     this.isLoading = false;
                 },
 
                 async createLabTest() {
                     this.isLoading = true;
-                    try { await this.apiCall('/lab-tests', 'POST', this.newLabTest); this.showModal = null; this.newLabTest = {}; await this.loadLabTests(); }
-                    catch (e) { alert('Error: ' + e.message); }
+                    try { 
+                        await this.apiCall('/lab-tests', 'POST', this.newLabTest); 
+                        Toast.success('Lab Test Created', 'Lab test created successfully');
+                        this.showModal = null; this.newLabTest = {}; await this.loadLabTests(); 
+                    }
+                    catch (e) { Toast.error('Error', e.message); }
                     this.isLoading = false;
                 },
 
                 async createMonitoringSession() {
                     this.isLoading = true;
-                    try { await this.apiCall('/monitoring/sessions', 'POST', this.newMonitoringSession); this.showModal = null; this.newMonitoringSession = { session_date: new Date().toISOString().split('T')[0] }; await this.loadMonitoringSessions(); }
-                    catch (e) { alert('Error: ' + e.message); }
+                    try { 
+                        await this.apiCall('/monitoring/sessions', 'POST', this.newMonitoringSession); 
+                        Toast.success('Session Started', 'Monitoring session started successfully');
+                        this.showModal = null; this.newMonitoringSession = { session_date: new Date().toISOString().split('T')[0] }; await this.loadMonitoringSessions(); 
+                    }
+                    catch (e) { Toast.error('Error', e.message); }
                     this.isLoading = false;
                 },
 
@@ -1292,10 +1535,11 @@
                     this.isLoading = true;
                     try {
                         await this.apiCall(`/projects/${this.editingProject.id}`, 'PUT', this.editingProject);
+                        Toast.success('Project Updated', 'Project updated successfully');
                         this.showModal = null;
                         this.editingProject = null;
                         await this.loadProjects();
-                    } catch (e) { alert('Error: ' + e.message); }
+                    } catch (e) { Toast.error('Error', e.message); }
                     this.isLoading = false;
                 },
                 async deleteProject(project) {
@@ -1303,46 +1547,68 @@
                     this.isLoading = true;
                     try {
                         await this.apiCall(`/projects/${project.id}`, 'DELETE');
+                        Toast.success('Project Deleted', `Project "${project.title}" has been deleted`);
                         await this.loadProjects();
                     } catch (e) { alert('Error: ' + e.message); }
                     this.isLoading = false;
                 },
                 viewProject(project) { this.openProjectDetail(project); },
-                viewFormula(formula) { alert('Formula: ' + formula.name + '\n\nCode: ' + formula.code + '\nStatus: ' + (formula.status || 'Draft')); },
-                viewLabTest(test) { alert('Lab Test: ' + test.test_type); },
-                viewMonitoringSession(session) { alert('Monitoring Session: ' + session.id); },
+                viewFormula(formula) { 
+                    Toast.info('Formula Details', `${formula.name} (${formula.code})\nStatus: ${formula.status || 'Draft'}`); 
+                },
+                viewLabTest(test) { Toast.info('Lab Test', test.test_type); },
+                viewMonitoringSession(session) { Toast.info('Monitoring Session', `Session ID: ${session.id.substring(0,8)}`); },
                 async addFormulaToProject() {
                     if (!this.selectedProject) return;
                     this.newFormula = { project_id: this.selectedProject.id };
                     this.showModal = 'createFormula';
                 },
 
-                async generateProjectQR(projectId) { try { await this.apiCall(`/projects/${projectId}/qr-codes`, 'POST', {}); alert('QR codes generated!'); } catch (e) { alert('Error: ' + e.message); } },
+                async generateProjectQR(projectId) { 
+                    try { 
+                        await this.apiCall(`/projects/${projectId}/qr-codes`, 'POST', {}); 
+                        Toast.success('QR Generated', 'QR codes generated successfully!'); 
+                    } catch (e) { 
+                        Toast.error('QR Error', e.message); 
+                    } 
+                },
 
-                async scanQRCode() { if (!this.qrInput) return; try { const res = await this.apiCall('/qr/scan', 'POST', { qr_data: this.qrInput }); this.qrResult = 'Found: ' + JSON.stringify(res.data); } catch (e) { this.qrResult = 'Not found or invalid QR code'; } },
+                async scanQRCode() { if (!this.qrInput) return; try { const res = await this.apiCall('/qr/scan', 'POST', { qr_data: this.qrInput }); this.qrResult = 'Found: ' + JSON.stringify(res.data); Toast.success('QR Found', 'Item located successfully'); } catch (e) { this.qrResult = 'Not found or invalid QR code'; Toast.warning('QR Not Found', 'Invalid or unknown QR code'); } },
 
                 async runAnalysis() {
                     this.isLoading = true;
-                    try { const res = await this.apiCall('/analysis/' + this.analysisType, 'POST', { project_id: this.selectedProjectId, query: this.aiQuery }); this.analysisResult = res.data || res; }
-                    catch (e) { this.analysisResult = { error: e.message }; }
+                    try { 
+                        const res = await this.apiCall('/analysis/' + this.analysisType, 'POST', { project_id: this.selectedProjectId, query: this.aiQuery }); 
+                        this.analysisResult = res.data || res; 
+                        Toast.success('Analysis Complete', 'Analysis results ready');
+                    }
+                    catch (e) { this.analysisResult = { error: e.message }; Toast.error('Analysis Error', e.message); }
                     this.isLoading = false;
                 },
 
                 async generateReport() {
                     this.isLoading = true;
-                    try { const res = await this.apiCall('/reports/generate', 'POST', { report_type: this.reportType, project_id: this.reportProjectId, title: this.reportTitle || 'Report' }); this.reportResult = res; }
-                    catch (e) { alert('Error: ' + e.message); }
+                    try { 
+                        const res = await this.apiCall('/reports/generate', 'POST', { report_type: this.reportType, project_id: this.reportProjectId, title: this.reportTitle || 'Report' }); 
+                        this.reportResult = res; 
+                        Toast.success('Report Generated', 'Your report is ready');
+                    }
+                    catch (e) { Toast.error('Report Error', e.message); }
                     this.isLoading = false;
                 },
 
                 async sendChatMessage() {
                     if (!this.chatInput || this.isChatLoading) return;
                     this.chatMessages.push({ id: Date.now(), role: 'user', content: this.chatInput });
-                    const query = this.chatInput; this.chatInput = ''; this.isChatLoading = true;
+                    const userMessage = this.chatInput; this.chatInput = ''; this.isChatLoading = true;
                     try {
-                        const res = await this.apiCall('/ai/chat', 'POST', { message: query, context_types: ['projects', 'formulas'] });
-                        this.chatMessages.push({ id: Date.now() + 1, role: 'ai', content: res.data?.response || res.response || 'I could not process that request.' });
-                    } catch (e) { this.chatMessages.push({ id: Date.now() + 1, role: 'ai', content: 'Sorry, I encountered an error: ' + e.message }); }
+                        const res = await this.apiCall('/ai/chat', 'POST', { message: userMessage, context_types: ['projects', 'formulas'] });
+                        // Handle various response formats from backend
+                        const aiResponse = res.data?.response || res.data?.response_alias || res.data?.answer || res.response || res.answer || 'I could not process that request.';
+                        this.chatMessages.push({ id: Date.now() + 1, role: 'ai', content: aiResponse });
+                    } catch (e) { 
+                        this.chatMessages.push({ id: Date.now() + 1, role: 'ai', content: 'Sorry, I encountered an error: ' + e.message }); 
+                    }
                     this.isChatLoading = false;
                     this.$nextTick(() => { const el = document.getElementById('chatMessages'); if (el) el.scrollTop = el.scrollHeight; });
                 },

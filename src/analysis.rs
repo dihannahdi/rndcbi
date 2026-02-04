@@ -1068,7 +1068,9 @@ pub struct ChatMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatRequest {
-    pub query: String,
+    /// Main message/query from user - supports both 'message' and 'query' fields
+    #[serde(alias = "query")]
+    pub message: String,
     pub project_id: Option<Uuid>,
     pub context_types: Option<Vec<String>>, // "projects", "formulas", "experiments", "results", "history"
     pub max_context_items: Option<usize>,
@@ -1076,7 +1078,11 @@ pub struct ChatRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatResponse {
+    /// Main response text - serialized as both 'answer' and 'response' for frontend compatibility
     pub answer: String,
+    /// Alias for answer field for frontend compatibility
+    #[serde(rename = "response")]
+    pub response_alias: String,
     pub sources: Vec<ContextSource>,
     pub suggested_queries: Vec<String>,
     pub confidence: String,
@@ -1133,7 +1139,7 @@ impl RAGChatService {
         
         // 2. Build prompt with context
         let system_prompt = self.build_system_prompt();
-        let user_prompt = self.build_user_prompt(&request.query, &context);
+        let user_prompt = self.build_user_prompt(&request.message, &context);
         
         // 3. Call OpenAI
         let response = self.call_openai_chat(&system_prompt, &user_prompt).await?;
@@ -1142,10 +1148,11 @@ impl RAGChatService {
         let sources = context.iter().take(5).map(|c| c.clone()).collect();
         
         // 5. Generate suggested follow-up queries
-        let suggested_queries = self.generate_suggestions(&request.query, &context);
+        let suggested_queries = self.generate_suggestions(&request.message, &context);
         
         Ok(ChatResponse {
-            answer: response,
+            answer: response.clone(),
+            response_alias: response,
             sources,
             suggested_queries,
             confidence: self.estimate_confidence(&context),
@@ -1159,7 +1166,7 @@ impl RAGChatService {
     ) -> Result<Vec<ContextSource>, AppError> {
         let mut context_sources = Vec::new();
         let max_items = request.max_context_items.unwrap_or(10);
-        let query_lower = request.query.to_lowercase();
+        let query_lower = request.message.to_lowercase();
         
         let context_types = request.context_types.clone().unwrap_or_else(|| {
             vec!["projects".to_string(), "formulas".to_string(), "experiments".to_string()]
