@@ -9,6 +9,7 @@ use validator::Validate;
 // ==============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type, PartialEq)]
+#[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "user_role", rename_all = "snake_case")]
 pub enum UserRole {
     PrincipalResearcher,
