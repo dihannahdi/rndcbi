@@ -37,7 +37,10 @@ impl UserService {
 
         let password_hash = PasswordService::hash_password(&req.password)?;
         let user_id = Uuid::new_v4();
-        let role_str = format!("{:?}", req.role).to_lowercase();
+        // Serialize role to snake_case string for database
+        let role_str = serde_json::to_string(&req.role)
+            .map_err(|e| AppError::InternalError(format!("Role serialization failed: {}", e)))?
+            .trim_matches('"').to_string();
 
         let user: User = sqlx::query_as(
             r#"
