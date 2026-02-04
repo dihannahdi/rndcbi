@@ -271,7 +271,7 @@ impl SessionService {
         sqlx::query(
             r#"
             INSERT INTO user_sessions (id, user_id, token_hash, ip_address, user_agent, expires_at)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4::inet, $5, $6)
             "#
         )
         .bind(session_id)
