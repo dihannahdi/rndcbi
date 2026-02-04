@@ -1,7 +1,7 @@
 use crate::config::Settings;
 use crate::errors::AppError;
 use crate::models::{User, UserRole};
-use actix_web::{dev::ServiceRequest, http::header::AUTHORIZATION, HttpMessage};
+use actix_web::{dev::ServiceRequest, http::header::AUTHORIZATION, web, HttpMessage};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation};
 use serde::{Deserialize, Serialize};
@@ -182,7 +182,10 @@ pub async fn validator(
             req.extensions_mut().insert(token_data.claims);
             Ok(req)
         }
-        Err(e) => Err((e.into(), req)),
+        Err(e) => {
+            let err: actix_web::Error = e.into();
+            Err((err, req))
+        }
     }
 }
 
