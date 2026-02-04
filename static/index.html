@@ -9,6 +9,10 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>CENTRABIO R&D NEXUS</title>
     
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/logo-only.png">
+    <link rel="apple-touch-icon" href="/logo-only.png">
+    
     <!-- PWA Manifest -->
     <link rel="manifest" href="/manifest.json">
     
@@ -892,8 +896,8 @@
         <div class="login-container">
             <div class="login-card fade-in">
                 <div class="login-header">
-                    <div class="login-logo">CB</div>
-                    <h1 class="login-title">CENTRABIO R&D NEXUS</h1>
+                    <img src="/cbi-logo-long.png" alt="CentraBio" class="login-logo-img" style="max-width: 260px; margin-bottom: 16px;">
+                    <h1 class="login-title">R&D NEXUS</h1>
                     <p class="login-subtitle">Scientific Decision Support System</p>
                 </div>
                 
@@ -921,10 +925,16 @@
                         </template>
                         <span x-text="isLoading ? 'Signing in...' : 'Sign In'"></span>
                     </button>
+                    
+                    <div style="margin-top: 20px; padding: 16px; background: rgba(26, 95, 42, 0.1); border-radius: 8px; border: 1px dashed #2d4f3a;">
+                        <p style="font-size: 12px; color: #6b8f70; margin-bottom: 8px;"><i class="fas fa-info-circle"></i> Demo Credentials:</p>
+                        <p style="font-size: 11px; color: #a5d6a7;">Email: <code style="background: #0a1612; padding: 2px 6px; border-radius: 4px;">admin@centrabio.com</code></p>
+                        <p style="font-size: 11px; color: #a5d6a7;">Password: <code style="background: #0a1612; padding: 2px 6px; border-radius: 4px;">Demo@2026!</code></p>
+                    </div>
                 </form>
                 
                 <div class="login-footer">
-                    <p>Centra Biotech Indonesia &copy; 2025</p>
+                    <p>Centra Biotech Indonesia &copy; 2026</p>
                     <p style="margin-top: 8px;">
                         <a href="#">Privacy Policy</a> • <a href="#">Terms of Service</a>
                     </p>
@@ -939,7 +949,7 @@
             <!-- Sidebar -->
             <aside class="sidebar" :class="{ 'collapsed': sidebarCollapsed, 'mobile-open': sidebarMobileOpen }">
                 <div class="sidebar-header">
-                    <div class="logo">CB</div>
+                    <img src="/logo-only.png" alt="CentraBio" class="logo-img" style="width: 40px; height: 40px; border-radius: 8px;">
                     <div class="brand-text">
                         <div class="brand-name">CENTRABIO</div>
                         <div class="brand-subtitle">R&D NEXUS</div>

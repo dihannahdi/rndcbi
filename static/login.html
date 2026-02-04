@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="CentraBio R&D NEXUS - Login">
+    <title>Login - CentraBio R&D NEXUS</title>
+    <link rel="icon" type="image/png" href="/logo-only.png">
+    <link rel="apple-touch-icon" href="/logo-only.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a5f2a;
+            --primary-light: #2d8c3f;
+            --primary-dark: #0d4a1a;
+            --secondary: #f0a500;
+            --bg-primary: #0a1612;
+            --bg-secondary: #121f1a;
+            --bg-card: #162520;
+            --text-primary: #e8f5e9;
+            --text-secondary: #a5d6a7;
+            --text-muted: #6b8f70;
+            --border: #2d4f3a;
+            --danger: #f44336;
+            --success: #4caf50;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-primary);
+        }
+        
+        .login-container {
+            width: 100%;
+            max-width: 420px;
+            padding: 20px;
+        }
+        
+        .login-card {
+            background: var(--bg-card);
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border);
+        }
+        
+        .logo-container {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .logo-container img {
+            max-width: 280px;
+            height: auto;
+        }
+        
+        .app-title {
+            text-align: center;
+            margin-bottom: 8px;
+        }
+        
+        .app-title h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+        
+        .app-title p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        .divider {
+            height: 1px;
+            background: var(--border);
+            margin: 24px 0;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        
+        .input-wrapper {
+            position: relative;
+        }
+        
+        .input-wrapper i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            font-size: 1rem;
+        }
+        
+        .input-wrapper input {
+            width: 100%;
+            padding: 14px 14px 14px 44px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: all 0.3s ease;
+        }
+        
+        .input-wrapper input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .input-wrapper input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26, 95, 42, 0.3);
+        }
+        
+        .toggle-password {
+            position: absolute;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+        }
+        
+        .toggle-password:hover {
+            color: var(--text-primary);
+        }
+        
+        .remember-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        
+        .checkbox-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .checkbox-wrapper input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+        }
+        
+        .checkbox-wrapper span {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+        
+        .forgot-link {
+            font-size: 0.875rem;
+            color: var(--primary-light);
+            text-decoration: none;
+            transition: color 0.3s;
+        }
+        
+        .forgot-link:hover {
+            color: var(--secondary);
+        }
+        
+        .login-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-light));
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .login-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(26, 95, 42, 0.4);
+        }
+        
+        .login-btn:active {
+            transform: translateY(0);
+        }
+        
+        .login-btn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .login-btn .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: none;
+        }
+        
+        .login-btn.loading .spinner {
+            display: block;
+        }
+        
+        .login-btn.loading span {
+            display: none;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #ff6b6b;
+            font-size: 0.875rem;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .success-message {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 20px;
+            color: #81c784;
+            font-size: 0.875rem;
+            display: none;
+        }
+        
+        .success-message.show {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .footer-text {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        .demo-credentials {
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            padding: 16px;
+            margin-top: 20px;
+            border: 1px dashed var(--border);
+        }
+        
+        .demo-credentials h4 {
+            font-size: 0.8rem;
+            color: var(--secondary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .demo-credentials table {
+            width: 100%;
+            font-size: 0.75rem;
+        }
+        
+        .demo-credentials td {
+            padding: 4px 0;
+            color: var(--text-secondary);
+        }
+        
+        .demo-credentials td:first-child {
+            color: var(--text-muted);
+        }
+        
+        .demo-credentials code {
+            background: var(--bg-primary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--primary-light);
+        }
+        
+        .quick-login {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .quick-login button {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .quick-login button:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+        
+        @media (max-width: 480px) {
+            .login-card { padding: 30px 24px; }
+            .logo-container img { max-width: 220px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-card">
+            <div class="logo-container">
+                <img src="/cbi-logo-long.png" alt="CentraBio Logo">
+            </div>
+            
+            <div class="app-title">
+                <h1>R&D NEXUS</h1>
+                <p>Scientific Decision Support System</p>
+            </div>
+            
+            <div class="divider"></div>
+            
+            <div class="error-message" id="errorMsg">
+                <i class="fas fa-exclamation-circle"></i>
+                <span id="errorText">Invalid credentials</span>
+            </div>
+            
+            <div class="success-message" id="successMsg">
+                <i class="fas fa-check-circle"></i>
+                <span>Login successful! Redirecting...</span>
+            </div>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-envelope"></i>
+                        <input type="email" id="email" name="email" placeholder="Enter your email" required>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-lock"></i>
+                        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                        <button type="button" class="toggle-password" onclick="togglePassword()">
+                            <i class="fas fa-eye" id="eyeIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="remember-row">
+                    <label class="checkbox-wrapper">
+                        <input type="checkbox" id="remember">
+                        <span>Remember me</span>
+                    </label>
+                    <a href="#" class="forgot-link">Forgot password?</a>
+                </div>
+                
+                <button type="submit" class="login-btn" id="loginBtn">
+                    <div class="spinner"></div>
+                    <span>Sign In</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+            
+            <div class="demo-credentials">
+                <h4><i class="fas fa-info-circle"></i> Demo Accounts</h4>
+                <table>
+                    <tr>
+                        <td>Admin:</td>
+                        <td><code>admin@centrabio.com</code></td>
+                    </tr>
+                    <tr>
+                        <td>R&D Manager:</td>
+                        <td><code>manager@centrabio.com</code></td>
+                    </tr>
+                    <tr>
+                        <td>Researcher:</td>
+                        <td><code>researcher@centrabio.com</code></td>
+                    </tr>
+                    <tr>
+                        <td>QC Analyst:</td>
+                        <td><code>qc@centrabio.com</code></td>
+                    </tr>
+                    <tr>
+                        <td>Password:</td>
+                        <td><code>Demo@2026!</code></td>
+                    </tr>
+                </table>
+                <div class="quick-login">
+                    <button type="button" onclick="quickLogin('admin@centrabio.com')">Admin</button>
+                    <button type="button" onclick="quickLogin('manager@centrabio.com')">Manager</button>
+                    <button type="button" onclick="quickLogin('researcher@centrabio.com')">Researcher</button>
+                    <button type="button" onclick="quickLogin('qc@centrabio.com')">QC</button>
+                </div>
+            </div>
+            
+            <p class="footer-text">
+                © 2026 Centra Biotech Indonesia • R&D Division
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '/api/v1';
+        
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const eyeIcon = document.getElementById('eyeIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.classList.replace('fa-eye', 'fa-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.classList.replace('fa-eye-slash', 'fa-eye');
+            }
+        }
+        
+        function quickLogin(email) {
+            document.getElementById('email').value = email;
+            document.getElementById('password').value = 'Demo@2026!';
+        }
+        
+        function showError(message) {
+            const errorMsg = document.getElementById('errorMsg');
+            const errorText = document.getElementById('errorText');
+            const successMsg = document.getElementById('successMsg');
+            
+            successMsg.classList.remove('show');
+            errorText.textContent = message;
+            errorMsg.classList.add('show');
+        }
+        
+        function showSuccess() {
+            const errorMsg = document.getElementById('errorMsg');
+            const successMsg = document.getElementById('successMsg');
+            
+            errorMsg.classList.remove('show');
+            successMsg.classList.add('show');
+        }
+        
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const loginBtn = document.getElementById('loginBtn');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            loginBtn.classList.add('loading');
+            loginBtn.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.data) {
+                    // Store tokens
+                    localStorage.setItem('access_token', data.data.access_token);
+                    localStorage.setItem('refresh_token', data.data.refresh_token);
+                    localStorage.setItem('user', JSON.stringify(data.data.user));
+                    
+                    showSuccess();
+                    
+                    // Redirect to dashboard
+                    setTimeout(() => {
+                        window.location.href = '/dashboard.html';
+                    }, 1000);
+                } else {
+                    showError(data.message || 'Invalid email or password');
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                showError('Connection error. Please try again.');
+            } finally {
+                loginBtn.classList.remove('loading');
+                loginBtn.disabled = false;
+            }
+        });
+        
+        // Check if already logged in
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            // Verify token is still valid
+            fetch(`${API_BASE}/auth/me`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            }).then(res => {
+                if (res.ok) {
+                    window.location.href = '/dashboard.html';
+                } else {
+                    localStorage.clear();
+                }
+            }).catch(() => {});
+        }
+    </script>
+</body>
+</html>
