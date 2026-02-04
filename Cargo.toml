@@ -1,0 +1,102 @@
+[package]
+name = "centrabio-nexus"
+version = "1.0.0"
+edition = "2021"
+authors = ["Centra Biotech Indonesia R&D Team"]
+description = "CENTRABIO R&D NEXUS - Scientific Decision Support System for Research Management"
+license = "Proprietary"
+repository = "https://github.com/centrabiotechindonesia/centrabio-nexus"
+
+[dependencies]
+# Web Framework
+actix-web = "4"
+actix-rt = "2"
+actix-cors = "0.7"
+actix-files = "0.6"
+actix-multipart = "0.7"
+actix-web-httpauth = "0.8"
+
+# Async Runtime
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "uuid", "json", "migrate", "rust_decimal"] }
+deadpool-postgres = "0.14"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Authentication & Security
+jsonwebtoken = "9"
+argon2 = "0.5"
+rand = "0.8"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+
+# OpenAI Integration
+async-openai = "0.29"
+
+# PDF Generation
+printpdf = "0.7"
+
+# QR Code Generation
+qrcode = "0.14"
+image = "0.25"
+
+# Statistics & Analytics
+statrs = "0.18"
+nalgebra = "0.33"
+
+# Decimal for precise financial calculations
+rust_decimal = { version = "1", features = ["serde", "serde-with-str"] }
+
+# SHA2 for token hashing
+sha2 = "0.10"
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-actix-web = "0.7"
+
+# Error Handling
+thiserror = "2"
+anyhow = "1"
+
+# HTTP Client (for external APIs)
+reqwest = { version = "0.12", features = ["json", "multipart"] }
+
+# Compression
+flate2 = "1"
+
+# Base64 encoding
+base64 = "0.22"
+
+# Regex
+regex = "1"
+
+# MIME types
+mime = "0.3"
+mime_guess = "2"
+
+[dev-dependencies]
+actix-rt = "2"
+tempfile = "3"
+mockall = "0.13"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
